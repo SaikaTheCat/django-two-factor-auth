@@ -11,12 +11,17 @@ from django_otp.forms import OTPAuthenticationFormMixin
 from django_otp.oath import totp
 from django_otp.plugins.otp_totp.models import TOTPDevice
 
-from . import webauthn_utils
 from .models import (
-    PhoneDevice, WebauthnDevice, get_available_methods, get_available_phone_methods,
+    PhoneDevice, WebauthnDevice,
+    get_available_methods, get_available_phone_methods,
 )
 from .utils import totp_digits
 from .validators import validate_international_phonenumber
+from .webauthn_utils import (
+    get_device_used_in_response, get_response_key_format,
+    make_assertion_options, make_assertion_response,
+    make_credential_options, make_registration_response,
+)
 
 try:
     from otp_yubikey.models import RemoteYubikeyDevice, YubikeyDevice
@@ -26,7 +31,7 @@ except ImportError:
 
 class MethodForm(forms.Form):
     method = forms.ChoiceField(label=_("Method"),
-                               initial='generator',
+                               initial='webauthn',
                                widget=forms.RadioSelect)
 
     def __init__(self, **kwargs):
@@ -83,9 +88,7 @@ class WebauthnDeviceForm(forms.Form):
     token = forms.CharField(
         label=_("WebAuthn Token"),
         widget=forms.PasswordInput(attrs={
-            'autofocus': 'autofocus',
-            'inputmode': 'none',
-            'autocomplete': 'one-time-code',
+            'readonly': 'readonly',
         })
     )
 
@@ -113,20 +116,19 @@ class WebauthnDeviceForm(forms.Form):
             self.registration_request = self.request.session['webauthn_registration_request']
         else:
             self.registration_request = json.dumps(
-                webauthn_utils.make_credential_options(user, self._get_relying_party())
-            )
+                make_credential_options(user, self._get_relying_party()))
             self.request.session['webauthn_registration_request'] = self.registration_request
 
     def clean_token(self):
         response = json.loads(self.cleaned_data['token'])
         try:
             request = json.loads(self.request.session['webauthn_registration_request'])
-            webauthn_registration_response = webauthn_utils.make_registration_response(
+            webauthn_registration_response = make_registration_response(
                 request, response, self._get_relying_party(), self._get_origin()
             )
 
             credentials = webauthn_registration_response.verify()
-            key_format = webauthn_utils.get_response_key_format(response)
+            key_format = get_response_key_format(response)
 
             self.webauthn_device_info = dict(
                 keyHandle=credentials.credential_id.decode('utf-8'),
@@ -135,9 +137,8 @@ class WebauthnDeviceForm(forms.Form):
                 format=key_format,
             )
 
-        except Exception as e:
-            message = e.args[0] if e.args else _('an unknown error happened.')
-            raise forms.ValidationError(_('Token validation failed: %s') % (message, ))
+        except Exception:
+            raise forms.ValidationError(_('Token validation failed.'))
         return response
 
     def save(self):
@@ -282,7 +283,7 @@ class AuthenticationTokenForm(OTPAuthenticationFormMixin, Form):
                 self.sign_request = self.request.session['webauthn_sign_request']
             else:
                 relying_party = self._get_relying_party()
-                webauthn_assertion_options = webauthn_utils.make_assertion_options(user, relying_party)
+                webauthn_assertion_options = make_assertion_options(user, relying_party)
                 self.sign_request = json.dumps(webauthn_assertion_options)
                 self.request.session['webauthn_sign_request'] = self.sign_request
 
@@ -313,12 +314,12 @@ class AuthenticationTokenForm(OTPAuthenticationFormMixin, Form):
 
             try:
                 response = json.loads(otp_token)
-                device = webauthn_utils.get_device_used_in_response(self.user, response)
+                device = get_device_used_in_response(self.user, response)
                 if self.initial_device is None:
                     raise forms.ValidationError('Could not find valid credentials in the response')
 
                 self.initial_device = device
-                webauthn_assertion_response = webauthn_utils.make_assertion_response(
+                webauthn_assertion_response = make_assertion_response(
                     self.user, self._get_relying_party(), self._get_origin(), self.initial_device, request, response
                 )
                 sign_count = webauthn_assertion_response.verify()
