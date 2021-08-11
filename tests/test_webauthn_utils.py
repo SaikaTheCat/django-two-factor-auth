@@ -1,23 +1,17 @@
-import json
-import unittest
-from unittest.case import expectedFailure
 from unittest import mock
 
-from django.http import response
-from .utils import UserMixin
-from django.conf import settings
-from django.test import TestCase
-from django.urls import reverse
 
-# Webauthn imports
+from django.test import TestCase
+
 from two_factor import webauthn_utils
-from two_factor.forms import WebauthnDeviceForm
 from two_factor.models import WebauthnDevice
 
 from webauthn.webauthn import COSE_ALG_ES256, COSE_ALG_PS256, COSE_ALG_RS256
 
+from .utils import UserMixin
 
-class WebAuthnUtilsTest(UserMixin,TestCase): 
+
+class WebAuthnUtilsTest(UserMixin, TestCase): 
     def setUp(self):
         super().setUp()
         self.user = self.create_user()

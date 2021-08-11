@@ -131,6 +131,7 @@ class WebauthnDevice(ThrottlingMixin, Device):
             'keyHandle': self.key_handle,
             'version': 'WEBAUTHN',
         }
+
     def as_credential(self):
         return {
             'id': self.key_handle,
